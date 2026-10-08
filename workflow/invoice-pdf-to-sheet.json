@@ -1,5 +1,5 @@
 {
-  "name": "Invoice PDF to Sheet (AI Extraction)",
+  "name": "Invoice PDF to Sheet (AI Extraction) v1.3",
   "nodes": [
     {
       "parameters": {
@@ -19,6 +19,7 @@
         "event": "fileCreated",
         "options": {}
       },
+      "id": "2c71c34c-6e0f-597c-af65-b644e850e71b",
       "name": "Google Drive Trigger",
       "type": "n8n-nodes-base.googleDriveTrigger",
       "typeVersion": 1,
@@ -29,6 +30,7 @@
     },
     {
       "parameters": {},
+      "id": "20d18890-ca4d-5610-9307-d0ba5a9f2953",
       "name": "Reprocess Inbox (manual)",
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
@@ -52,6 +54,7 @@
           ]
         }
       },
+      "id": "9185e05d-2cb1-5fd8-9195-1e2b2baa59d2",
       "name": "List Inbox PDFs",
       "type": "n8n-nodes-base.googleDrive",
       "typeVersion": 3,
@@ -59,6 +62,68 @@
         220,
         200
       ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "28be40c3-2bcd-5c67-ae96-cebaa2aacf32",
+              "name": "processedFolderId",
+              "value": "YOUR_PROCESSED_FOLDER_ID",
+              "type": "string"
+            },
+            {
+              "id": "69bc831f-3946-5488-aced-197fd31e196a",
+              "name": "invoiceLogSheetId",
+              "value": "YOUR_INVOICE_LOG_SHEET_ID",
+              "type": "string"
+            },
+            {
+              "id": "f8b86147-47e3-5b8f-b5ad-b854ca2df579",
+              "name": "notifyEmail",
+              "value": "you@example.com",
+              "type": "string"
+            },
+            {
+              "id": "63db141e-274d-5b51-99cf-2293c59d727c",
+              "name": "alertEmail",
+              "value": "you@example.com",
+              "type": "string"
+            },
+            {
+              "id": "262bf652-33c9-5925-9fec-b73d8e1721f1",
+              "name": "timezone",
+              "value": "America/New_York",
+              "type": "string"
+            },
+            {
+              "id": "5700d10c-a8bf-5378-a018-54ac689ee22d",
+              "name": "extractionPrompt",
+              "value": "You are an accounts-payable data extraction assistant. Extract the fields below from the attached invoice. Rules: use null for any field that is not printed on the document; never guess, infer, or calculate a missing value; copy amounts exactly as printed (numbers only, no currency symbols or commas); format dates as YYYY-MM-DD; if the due date is text such as 'Due upon receipt', set due_date to null and put that text in due_date_note.",
+              "type": "string"
+            },
+            {
+              "id": "54d2b424-5072-5378-a151-7080f74259e4",
+              "name": "responseSchema",
+              "value": "{\n  \"type\": \"OBJECT\",\n  \"properties\": {\n    \"vendor\": {\n      \"type\": \"STRING\",\n      \"nullable\": true\n    },\n    \"invoice_number\": {\n      \"type\": \"STRING\",\n      \"nullable\": true\n    },\n    \"invoice_date\": {\n      \"type\": \"STRING\",\n      \"nullable\": true\n    },\n    \"due_date\": {\n      \"type\": \"STRING\",\n      \"nullable\": true\n    },\n    \"due_date_note\": {\n      \"type\": \"STRING\",\n      \"nullable\": true\n    },\n    \"subtotal\": {\n      \"type\": \"NUMBER\",\n      \"nullable\": true\n    },\n    \"tax\": {\n      \"type\": \"NUMBER\",\n      \"nullable\": true\n    },\n    \"total\": {\n      \"type\": \"NUMBER\",\n      \"nullable\": true\n    }\n  },\n  \"required\": [\n    \"vendor\",\n    \"invoice_number\",\n    \"invoice_date\",\n    \"due_date\",\n    \"due_date_note\",\n    \"subtotal\",\n    \"tax\",\n    \"total\"\n  ]\n}",
+              "type": "object"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "817cd696-07a6-5713-86ed-1c23c822c322",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        440,
+        0
+      ],
+      "notes": "All per-client settings live here. The Inbox folder ID must also be set on 'Google Drive Trigger' and 'List Inbox PDFs' (they run before this node)."
     },
     {
       "parameters": {
@@ -84,27 +149,10 @@
         },
         "options": {}
       },
+      "id": "50a23cbe-8ef9-5ad5-9107-8e57ab701136",
       "name": "Is PDF?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [
-        440,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "download",
-        "fileId": {
-          "__rl": true,
-          "mode": "id",
-          "value": "={{ $json.id }}"
-        },
-        "options": {}
-      },
-      "name": "Download Invoice PDF",
-      "type": "n8n-nodes-base.googleDrive",
-      "typeVersion": 3,
       "position": [
         660,
         0
@@ -112,122 +160,16 @@
     },
     {
       "parameters": {
-        "operation": "binaryToPropery",
-        "binaryPropertyName": "data",
-        "options": {}
+        "jsCode": "// Non-PDF files are logged (not silently dropped) so nothing in the Inbox goes unnoticed.\nconst cfg = $('Config').first().json;\nconst now = DateTime.now().setZone(cfg.timezone || 'America/New_York');\nreturn {\n  json: {\n    date_processed: now.toFormat('yyyy-MM-dd'),\n    processed_at: now.toFormat('yyyy-MM-dd HH:mm:ss ZZZZ'),\n    file_name: $json.name || '',\n    source_file_id: $json.id || '',\n    status: 'Skipped - Not a PDF',\n    notes: `Not processed: file type is ${$json.mimeType || 'unknown'}, only PDFs are read`,\n  },\n};\n",
+        "mode": "runOnceForEachItem"
       },
-      "name": "PDF to Base64",
-      "type": "n8n-nodes-base.extractFromFile",
-      "typeVersion": 1,
+      "id": "a6fbf683-7d17-537f-9aee-2acbbadf3481",
+      "name": "Describe Non-PDF",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         880,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "googlePalmApi",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ contents: [ { parts: [ { text: \"You are an accounts-payable data extraction assistant. Extract the fields below from the attached invoice. Rules: use null for any field that is not printed on the document; never guess, infer, or calculate a missing value; copy amounts exactly as printed (numbers only, no currency symbols or commas); format dates as YYYY-MM-DD; if the due date is text such as 'Due upon receipt', set due_date to null and put that text in due_date_note.\" }, { inline_data: { mime_type: 'application/pdf', data: $('PDF to Base64').item.json.data } } ] } ], generationConfig: { temperature: 0, responseMimeType: 'application/json', responseSchema: {\"type\": \"OBJECT\", \"properties\": {\"vendor\": {\"type\": \"STRING\", \"nullable\": true}, \"invoice_number\": {\"type\": \"STRING\", \"nullable\": true}, \"invoice_date\": {\"type\": \"STRING\", \"nullable\": true}, \"due_date\": {\"type\": \"STRING\", \"nullable\": true}, \"due_date_note\": {\"type\": \"STRING\", \"nullable\": true}, \"subtotal\": {\"type\": \"NUMBER\", \"nullable\": true}, \"tax\": {\"type\": \"NUMBER\", \"nullable\": true}, \"total\": {\"type\": \"NUMBER\", \"nullable\": true} }, \"required\": [\"vendor\", \"invoice_number\", \"invoice_date\", \"due_date\", \"due_date_note\", \"subtotal\", \"tax\", \"total\"]} } }) }}",
-        "options": {
-          "batching": {
-            "batch": {
-              "batchSize": 1,
-              "batchInterval": 5000
-            }
-          }
-        }
-      },
-      "name": "Gemini 3.5 Flash Lite",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        1100,
-        0
-      ],
-      "onError": "continueErrorOutput"
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "googlePalmApi",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ contents: [ { parts: [ { text: \"You are an accounts-payable data extraction assistant. Extract the fields below from the attached invoice. Rules: use null for any field that is not printed on the document; never guess, infer, or calculate a missing value; copy amounts exactly as printed (numbers only, no currency symbols or commas); format dates as YYYY-MM-DD; if the due date is text such as 'Due upon receipt', set due_date to null and put that text in due_date_note.\" }, { inline_data: { mime_type: 'application/pdf', data: $('PDF to Base64').item.json.data } } ] } ], generationConfig: { temperature: 0, responseMimeType: 'application/json', responseSchema: {\"type\": \"OBJECT\", \"properties\": {\"vendor\": {\"type\": \"STRING\", \"nullable\": true}, \"invoice_number\": {\"type\": \"STRING\", \"nullable\": true}, \"invoice_date\": {\"type\": \"STRING\", \"nullable\": true}, \"due_date\": {\"type\": \"STRING\", \"nullable\": true}, \"due_date_note\": {\"type\": \"STRING\", \"nullable\": true}, \"subtotal\": {\"type\": \"NUMBER\", \"nullable\": true}, \"tax\": {\"type\": \"NUMBER\", \"nullable\": true}, \"total\": {\"type\": \"NUMBER\", \"nullable\": true} }, \"required\": [\"vendor\", \"invoice_number\", \"invoice_date\", \"due_date\", \"due_date_note\", \"subtotal\", \"tax\", \"total\"]} } }) }}",
-        "options": {
-          "batching": {
-            "batch": {
-              "batchSize": 1,
-              "batchInterval": 5000
-            }
-          }
-        }
-      },
-      "name": "Fallback: Gemini 3.1 Flash Lite",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        1320,
-        0
-      ],
-      "onError": "continueErrorOutput"
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "googlePalmApi",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ contents: [ { parts: [ { text: \"You are an accounts-payable data extraction assistant. Extract the fields below from the attached invoice. Rules: use null for any field that is not printed on the document; never guess, infer, or calculate a missing value; copy amounts exactly as printed (numbers only, no currency symbols or commas); format dates as YYYY-MM-DD; if the due date is text such as 'Due upon receipt', set due_date to null and put that text in due_date_note.\" }, { inline_data: { mime_type: 'application/pdf', data: $('PDF to Base64').item.json.data } } ] } ], generationConfig: { temperature: 0, responseMimeType: 'application/json', responseSchema: {\"type\": \"OBJECT\", \"properties\": {\"vendor\": {\"type\": \"STRING\", \"nullable\": true}, \"invoice_number\": {\"type\": \"STRING\", \"nullable\": true}, \"invoice_date\": {\"type\": \"STRING\", \"nullable\": true}, \"due_date\": {\"type\": \"STRING\", \"nullable\": true}, \"due_date_note\": {\"type\": \"STRING\", \"nullable\": true}, \"subtotal\": {\"type\": \"NUMBER\", \"nullable\": true}, \"tax\": {\"type\": \"NUMBER\", \"nullable\": true}, \"total\": {\"type\": \"NUMBER\", \"nullable\": true} }, \"required\": [\"vendor\", \"invoice_number\", \"invoice_date\", \"due_date\", \"due_date_note\", \"subtotal\", \"tax\", \"total\"]} } }) }}",
-        "options": {
-          "batching": {
-            "batch": {
-              "batchSize": 1,
-              "batchInterval": 5000
-            }
-          }
-        }
-      },
-      "name": "Fallback: Gemini 3.7 Flash",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        1540,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const raw = $json.candidates?.[0]?.content?.parts?.[0]?.text;\nif (!raw) throw new Error('Gemini returned no content: ' + JSON.stringify($json).slice(0, 500));\nconst fields = JSON.parse(raw);\nconst src = $('Is PDF?').item.json;\nreturn { json: { ...fields, source_file_id: src.id, source_file_name: src.name, model_used: $prevNode.name } };",
-        "mode": "runOnceForEachItem"
-      },
-      "name": "Parse AI Response",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1760,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const inv = $json;\nconst issues = [];\nconst required = { vendor: 'Vendor', invoice_number: 'Invoice #', invoice_date: 'Invoice Date', total: 'Total' };\nfor (const [key, label] of Object.entries(required)) {\n  if (inv[key] === null || inv[key] === undefined || inv[key] === '') issues.push(`Missing ${label}`);\n}\nif (inv.subtotal != null && inv.tax != null && inv.total != null) {\n  const expected = Math.round((inv.subtotal + inv.tax) * 100) / 100;\n  if (Math.abs(expected - inv.total) > 0.01) {\n    issues.push(`Total mismatch: subtotal + tax = ${expected.toFixed(2)}, invoice says ${Number(inv.total).toFixed(2)}`);\n  }\n}\nif (!inv.due_date) issues.push(inv.due_date_note ? `No due date (${inv.due_date_note})` : 'Missing Due Date');\nconst clean = s => String(s || '').replace(/[^A-Za-z0-9]+/g, '');\nconst month = inv.invoice_date ? inv.invoice_date.slice(0, 7) : 'UNDATED';\nconst newName = `${month}_${clean(inv.vendor) || 'UnknownVendor'}_${clean(inv.invoice_number) || 'NOINV'}.pdf`;\nreturn { json: { ...inv, date_processed: new Date().toISOString().slice(0, 10), status: issues.length ? 'Needs Review' : 'OK', notes: issues.join('; '), new_file_name: newName } };",
-        "mode": "runOnceForEachItem"
-      },
-      "name": "Validate Invoice",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1980,
-        0
+        300
       ]
     },
     {
@@ -236,7 +178,7 @@
         "documentId": {
           "__rl": true,
           "mode": "id",
-          "value": "YOUR_INVOICE_LOG_SHEET_ID"
+          "value": "={{ $('Config').first().json.invoiceLogSheetId }}"
         },
         "sheetName": {
           "__rl": true,
@@ -248,16 +190,11 @@
           "mappingMode": "defineBelow",
           "value": {
             "Date Processed": "={{ $json.date_processed }}",
-            "Vendor": "={{ $json.vendor }}",
-            "Invoice #": "={{ $json.invoice_number }}",
-            "Invoice Date": "={{ $json.invoice_date }}",
-            "Due Date": "={{ $json.due_date }}",
-            "Subtotal": "={{ $json.subtotal }}",
-            "Tax": "={{ $json.tax }}",
-            "Total": "={{ $json.total }}",
-            "File Name": "={{ $json.new_file_name }}",
+            "File Name": "={{ $json.file_name }}",
             "Status": "={{ $json.status }}",
-            "Notes": "={{ $json.notes }}"
+            "Notes": "={{ $json.notes }}",
+            "Source File ID": "={{ $json.source_file_id }}",
+            "Processed At": "={{ $json.processed_at }}"
           },
           "matchingColumns": [],
           "schema": [
@@ -359,17 +296,660 @@
               "display": true,
               "type": "string",
               "canBeUsedToMatch": true
+            },
+            {
+              "id": "Source File ID",
+              "displayName": "Source File ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Model Used",
+              "displayName": "Model Used",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Due Date Note",
+              "displayName": "Due Date Note",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Processed At",
+              "displayName": "Processed At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
             }
           ]
         },
         "options": {}
       },
+      "id": "827d5b01-bcc2-510e-9ed0-9202a0afb402",
+      "name": "Log Non-PDF",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Config').first().json.invoiceLogSheetId }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gid=0",
+          "cachedResultName": "Sheet1"
+        },
+        "filtersUI": {},
+        "options": {}
+      },
+      "id": "defc49a9-7a8a-5f7b-a429-dafe4f985aa7",
+      "name": "Read Invoice Log",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        880,
+        0
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "notes": "Runs once per execution. Always outputs (an empty item if the sheet has no rows yet)."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Runs once per poll/backfill. Skips any PDF whose Drive file ID is already in the\n// Invoice Log, before a Gemini call is spent on it.\nconst rows = $input.all().map(i => i.json).filter(r => r && Object.keys(r).length > 0);\nconst loggedIds = new Set(rows.map(r => String(r['Source File ID'] ?? '').trim()).filter(Boolean));\nconst seen = new Set();\nconst out = [];\nfor (const f of $('Is PDF?').all(0)) {\n  const id = String(f.json.id ?? '').trim();\n  let reason = '';\n  if (!id) reason = 'No Drive file ID on trigger item';\n  else if (loggedIds.has(id)) reason = 'Already in Invoice Log (same Drive file ID)';\n  else if (seen.has(id)) reason = 'Same file listed twice in this run';\n  if (id) seen.add(id);\n  out.push({\n    json: {\n      file_id: id,\n      file_name: f.json.name ?? '',\n      mime_type: f.json.mimeType ?? '',\n      already_logged: reason !== '',\n      skip_reason: reason,\n    },\n    pairedItem: { item: 0 },\n  });\n}\nreturn out;\n",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "6c270adc-94f3-5d0e-8ac8-224e0a0e57db",
+      "name": "Check File ID Logged",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "newfile",
+              "leftValue": "={{ $json.already_logged !== true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "8a98c156-ebfc-578a-80ac-d134b75970b8",
+      "name": "New File?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "e5c81cad-b3b4-5e98-ac09-c3ccd474ca00",
+      "name": "Skip: File Already Logged",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1540,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.file_id }}"
+        },
+        "options": {}
+      },
+      "id": "31737f1c-9548-5f87-9c99-e95fd5ef98e4",
+      "name": "Download Invoice PDF",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        1540,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "binaryToPropery",
+        "binaryPropertyName": "data",
+        "options": {}
+      },
+      "id": "918ea8ab-d73a-50bd-b1ee-52f056c36752",
+      "name": "PDF to Base64",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        1760,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [ { parts: [ { text: $('Config').first().json.extractionPrompt }, { inline_data: { mime_type: 'application/pdf', data: $('PDF to Base64').item.json.data } } ] } ], generationConfig: { temperature: 0, responseMimeType: 'application/json', responseSchema: $('Config').first().json.responseSchema } }) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 5000
+            }
+          }
+        }
+      },
+      "id": "85be387b-1b73-5412-b8c1-f8e99eacb870",
+      "name": "Gemini 3.5 Flash Lite",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        0
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "content35",
+              "leftValue": "={{ ((((($json.candidates || [])[0] || {}).content || {}).parts) || []).map(p => (p && p.text) || '').join('').trim().length > 0 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "276bd004-02e0-5387-a3e3-9506eb191014",
+      "name": "Has Content? (3.5 Flash Lite)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [ { parts: [ { text: $('Config').first().json.extractionPrompt }, { inline_data: { mime_type: 'application/pdf', data: $('PDF to Base64').item.json.data } } ] } ], generationConfig: { temperature: 0, responseMimeType: 'application/json', responseSchema: $('Config').first().json.responseSchema } }) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 5000
+            }
+          }
+        }
+      },
+      "id": "a2b93498-a430-5fa7-91a8-ef1258a4fc28",
+      "name": "Fallback: Gemini 3.1 Flash Lite",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2420,
+        100
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "content31",
+              "leftValue": "={{ ((((($json.candidates || [])[0] || {}).content || {}).parts) || []).map(p => (p && p.text) || '').join('').trim().length > 0 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ce832f84-c797-5480-bf73-98016c925cdc",
+      "name": "Has Content? (3.1 Flash Lite)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2640,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [ { parts: [ { text: $('Config').first().json.extractionPrompt }, { inline_data: { mime_type: 'application/pdf', data: $('PDF to Base64').item.json.data } } ] } ], generationConfig: { temperature: 0, responseMimeType: 'application/json', responseSchema: $('Config').first().json.responseSchema } }) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 5000
+            }
+          }
+        }
+      },
+      "id": "c39cf318-6644-520b-8180-634b067d59d6",
+      "name": "Fallback: Gemini 3.7 Flash",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2860,
+        200
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "content37",
+              "leftValue": "={{ ((((($json.candidates || [])[0] || {}).content || {}).parts) || []).map(p => (p && p.text) || '').join('').trim().length > 0 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "5e837aa9-a3a1-528c-9a94-53fe0f43435a",
+      "name": "Has Content? (3.7 Flash)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3080,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// All three Gemini models failed (HTTP error, or an answer with no usable content).\n// Builds the alert; the PDF stays in the Inbox, unlogged, so Reprocess Inbox can retry it.\nconst cfg = $('Config').first().json;\nconst now = DateTime.now().setZone(cfg.timezone || 'America/New_York');\nlet src = {};\ntry { src = $('Check File ID Logged').item.json || {}; } catch (e) { src = {}; }\nconst j = $json || {};\nlet error;\nif (j.error) {\n  const e = j.error;\n  error = typeof e === 'string' ? e : [e.message, e.description].filter(Boolean).join(' - ') || JSON.stringify(e);\n} else if (j.candidates || j.promptFeedback) {\n  const c = (Array.isArray(j.candidates) && j.candidates[0]) || {};\n  error = `Gemini answered but returned no usable content (${(j.promptFeedback && j.promptFeedback.blockReason) || c.finishReason || 'empty response'})`;\n} else {\n  error = JSON.stringify(j).slice(0, 500) || 'Unknown error';\n}\nreturn {\n  json: {\n    file_id: src.file_id || '(unknown)',\n    file_name: src.file_name || '(unknown)',\n    drive_link: src.file_id ? `https://drive.google.com/file/d/${src.file_id}/view` : '',\n    error: String(error).slice(0, 1000),\n    models_tried: 'Gemini 3.5 Flash Lite, Gemini 3.1 Flash Lite, Gemini 3.7 Flash',\n    failed_at: now.toFormat('yyyy-MM-dd HH:mm:ss ZZZZ'),\n  },\n};\n",
+        "mode": "runOnceForEachItem"
+      },
+      "id": "f9510844-e28a-59fc-a59b-40b4fa300959",
+      "name": "Build Failure Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3300,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Config').first().json.alertEmail }}",
+        "subject": "={{ '[Extraction Failed] ' + $json.file_name }}",
+        "emailType": "text",
+        "message": "={{ ['All 3 Gemini models failed to read this invoice, so it was NOT logged.', '',\n'File: ' + $json.file_name,\n'Drive file ID: ' + $json.file_id,\n'Open: ' + $json.drive_link,\n'Error (last model): ' + $json.error,\n'Models tried: ' + $json.models_tried,\n'Failed at: ' + $json.failed_at, '',\n'The PDF is still in the Inbox. Run \"Reprocess Inbox\" to retry once the issue is fixed.'].join('\\n') }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "1485dccf-ff42-53e9-9ab6-497573f23f34",
+      "name": "Email Failure Alert",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        3520,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Turns Gemini's reply into typed fields. This node never throws: an empty, blocked or\n// non-JSON reply becomes parse_error, which Validate Invoice turns into a Needs Review row.\nconst FIELDS = ['vendor', 'invoice_number', 'invoice_date', 'due_date', 'due_date_note', 'subtotal', 'tax', 'total'];\nconst MODEL_BY_NODE = {\n  'Has Content? (3.5 Flash Lite)': 'Gemini 3.5 Flash Lite',\n  'Has Content? (3.1 Flash Lite)': 'Gemini 3.1 Flash Lite',\n  'Has Content? (3.7 Flash)': 'Gemini 3.7 Flash',\n};\nlet src = {};\ntry { src = $('Check File ID Logged').item.json || {}; } catch (e) { src = {}; }\nlet prev = '';\ntry { prev = $prevNode.name; } catch (e) { prev = ''; }\nconst res = $json || {};\nconst model = MODEL_BY_NODE[prev] || res.modelVersion || prev || 'unknown';\n\nconst candidate = (Array.isArray(res.candidates) && res.candidates[0]) || {};\nconst parts = (candidate.content && Array.isArray(candidate.content.parts)) ? candidate.content.parts : [];\nconst raw = parts.map(p => (p && typeof p.text === 'string' ? p.text : '')).join('').trim();\n\nlet fields = {};\nlet parseError = '';\nif (!raw) {\n  const why = (res.promptFeedback && res.promptFeedback.blockReason) || candidate.finishReason || 'empty response';\n  parseError = `AI returned no content (${why})`;\n} else {\n  const text = raw.replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```$/, '');\n  try {\n    let parsed = JSON.parse(text);\n    if (Array.isArray(parsed) && parsed.length === 1) parsed = parsed[0];\n    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) fields = parsed;\n    else parseError = 'AI response was JSON but not a single invoice object';\n  } catch (e) {\n    parseError = `AI response was not valid JSON (${e.message})`;\n  }\n}\n\nconst out = {};\nfor (const k of FIELDS) out[k] = fields[k] === undefined ? null : fields[k];\nreturn {\n  json: {\n    ...out,\n    source_file_id: src.file_id || null,\n    source_file_name: src.file_name || null,\n    model_used: model,\n    parse_error: parseError || null,\n    raw_response_excerpt: parseError ? raw.slice(0, 300) : null,\n  },\n};\n",
+        "mode": "runOnceForEachItem"
+      },
+      "id": "9e1df48f-0cf4-57f0-8892-29497b47d6ce",
+      "name": "Parse AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3300,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Deterministic accountant-style checks. Sets status OK / Needs Review, notes, the new\n// file name, and the processed date/time in the client's time zone (Config.timezone).\nconst cfg = $('Config').first().json;\nconst now = DateTime.now().setZone(cfg.timezone || 'America/New_York');\nconst inv = { ...$json };\nconst issues = [];\nconst LABEL = { vendor: 'Vendor', invoice_number: 'Invoice #', invoice_date: 'Invoice Date', due_date: 'Due Date', subtotal: 'Subtotal', tax: 'Tax', total: 'Total' };\nconst isBlank = v => v === null || v === undefined || String(v).trim() === '';\nconst toAmount = v => {\n  if (isBlank(v)) return null;\n  if (typeof v === 'number') return Number.isFinite(v) ? v : NaN;\n  const n = Number(String(v).replace(/[$,\\s]/g, ''));\n  return Number.isFinite(n) ? n : NaN;\n};\nconst isIsoDate = s => typeof s === 'string' && /^\\d{4}-\\d{2}-\\d{2}$/.test(s) && DateTime.fromISO(s).isValid;\nconst clean = s => String(s || '').replace(/[^A-Za-z0-9]+/g, '');\nlet newName;\n\nif (inv.parse_error) {\n  issues.push(`${inv.parse_error}. Enter this invoice manually`);\n  newName = inv.source_file_name || `UNREADABLE_${inv.source_file_id || 'file'}.pdf`;\n} else {\n  for (const k of ['subtotal', 'tax', 'total']) {\n    const n = toAmount(inv[k]);\n    if (Number.isNaN(n)) { issues.push(`${LABEL[k]} is not a number (\"${inv[k]}\")`); inv[k] = null; inv[`${k}_unreadable`] = true; }\n    else inv[k] = n;\n  }\n  for (const k of ['vendor', 'invoice_number', 'invoice_date', 'total']) {\n    if (isBlank(inv[k]) && !inv[`${k}_unreadable`]) issues.push(`Missing ${LABEL[k]}`);\n  }\n  for (const k of ['invoice_date', 'due_date']) {\n    if (!isBlank(inv[k]) && !isIsoDate(String(inv[k]))) issues.push(`${LABEL[k]} is not a valid YYYY-MM-DD date (\"${inv[k]}\")`);\n  }\n  if (inv.total !== null) {\n    if (inv.subtotal !== null && inv.tax !== null) {\n      const expected = Math.round((inv.subtotal + inv.tax) * 100) / 100;\n      if (Math.abs(expected - inv.total) > 0.01 + 1e-9) {\n        issues.push(`Total mismatch: subtotal + tax = ${expected.toFixed(2)}, invoice says ${Number(inv.total).toFixed(2)}`);\n      }\n    } else {\n      const missing = [inv.subtotal === null ? 'Subtotal' : null, inv.tax === null ? 'Tax' : null].filter(Boolean);\n      issues.push(`Cannot verify total: missing ${missing.join(' and ')}`);\n    }\n  }\n  if (isBlank(inv.due_date)) issues.push(inv.due_date_note ? `No due date (${inv.due_date_note})` : 'Missing Due Date');\n  const month = isIsoDate(inv.invoice_date) ? inv.invoice_date.slice(0, 7) : 'UNDATED';\n  newName = `${month}_${clean(inv.vendor) || 'UnknownVendor'}_${clean(inv.invoice_number) || 'NOINV'}.pdf`;\n}\ndelete inv.subtotal_unreadable; delete inv.tax_unreadable; delete inv.total_unreadable;\n\nreturn {\n  json: {\n    ...inv,\n    date_processed: now.toFormat('yyyy-MM-dd'),\n    processed_at: now.toFormat('yyyy-MM-dd HH:mm:ss ZZZZ'),\n    status: issues.length ? 'Needs Review' : 'OK',\n    notes: issues.join('; '),\n    new_file_name: newName,\n    drive_link: inv.source_file_id ? `https://drive.google.com/file/d/${inv.source_file_id}/view` : '',\n  },\n};\n",
+        "mode": "runOnceForEachItem"
+      },
+      "id": "218447b4-a224-5238-b468-81ec3b3c4d02",
+      "name": "Validate Invoice",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3520,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Second dedupe pass, after extraction: same normalized vendor + invoice # already in the\n// Invoice Log (or earlier in this same run) = duplicate. Duplicates are not logged,\n// renamed, moved or emailed.\nconst SUFFIXES = new Set(['inc', 'llc', 'ltd', 'co', 'corp', 'corporation', 'company', 'pc', 'pllc', 'llp', 'lp']);\nconst normVendor = v => {\n  const t = String(v ?? '').toLowerCase().replace(/&/g, ' and ').split(/[^a-z0-9]+/).filter(Boolean);\n  while (t.length > 1 && SUFFIXES.has(t[t.length - 1])) t.pop();\n  return t.join('');\n};\nconst normInvoice = v => String(v ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^0+(?=.)/, '');\nconst keyOf = (vendor, inv) => {\n  const nv = normVendor(vendor), ni = normInvoice(inv);\n  return nv && ni ? `${nv}|${ni}` : null;\n};\n\nconst rows = $('Read Invoice Log').all(0).map(i => i.json).filter(r => r && Object.keys(r).length > 0);\nconst loggedIds = new Set(rows.map(r => String(r['Source File ID'] ?? '').trim()).filter(Boolean));\nconst loggedKeys = new Map();\nfor (const r of rows) {\n  const k = keyOf(r['Vendor'], r['Invoice #']);\n  if (k && !loggedKeys.has(k)) loggedKeys.set(k, r.row_number ?? '?');\n}\n\n// Keys accepted earlier in this execution. The fallback chain can make this node run more\n// than once per execution, so they are kept in workflow static data, tagged by execution id.\nconst sd = $getWorkflowStaticData('global');\nif (sd.dedupeExecutionId !== $execution.id) { sd.dedupeExecutionId = $execution.id; sd.dedupeKeys = []; }\nconst runKeys = new Set(sd.dedupeKeys);\n\nreturn $input.all().map((item, i) => {\n  const inv = item.json;\n  const fid = String(inv.source_file_id ?? '').trim();\n  const key = inv.parse_error ? null : keyOf(inv.vendor, inv.invoice_number);\n  let reason = '';\n  if (fid && loggedIds.has(fid)) reason = 'Already in Invoice Log (same Drive file ID)';\n  else if (key && loggedKeys.has(key)) reason = `Already in Invoice Log: same vendor + invoice # (sheet row ${loggedKeys.get(key)})`;\n  else if (key && runKeys.has(key)) reason = 'Same vendor + invoice # appeared earlier in this run';\n  if (!reason && key) { runKeys.add(key); sd.dedupeKeys.push(key); }\n  return { json: { ...inv, dedupe_key: key, is_duplicate: reason !== '', duplicate_reason: reason }, pairedItem: { item: i } };\n});\n",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "39207fd6-043c-5b2a-aeef-85fb15b5634c",
+      "name": "Check Duplicate Invoice",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3740,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "dupcheck",
+              "leftValue": "={{ $json.is_duplicate === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c1637e48-e3ac-5bab-a8b0-cbe6d6210784",
+      "name": "Duplicate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3960,
+        -200
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "5137e764-228f-510d-a9ba-2a8783c1da4a",
+      "name": "Skip: Duplicate Invoice",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        4180,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Config').first().json.invoiceLogSheetId }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gid=0",
+          "cachedResultName": "Sheet1"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date Processed": "={{ $json.date_processed }}",
+            "Vendor": "={{ $json.vendor }}",
+            "Invoice #": "={{ $json.invoice_number }}",
+            "Invoice Date": "={{ $json.invoice_date }}",
+            "Due Date": "={{ $json.due_date }}",
+            "Subtotal": "={{ $json.subtotal }}",
+            "Tax": "={{ $json.tax }}",
+            "Total": "={{ $json.total }}",
+            "File Name": "={{ $json.new_file_name }}",
+            "Status": "={{ $json.status }}",
+            "Notes": "={{ $json.notes }}",
+            "Source File ID": "={{ $json.source_file_id }}",
+            "Model Used": "={{ $json.model_used }}",
+            "Due Date Note": "={{ $json.due_date_note }}",
+            "Processed At": "={{ $json.processed_at }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Date Processed",
+              "displayName": "Date Processed",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Vendor",
+              "displayName": "Vendor",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Invoice #",
+              "displayName": "Invoice #",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Invoice Date",
+              "displayName": "Invoice Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Due Date",
+              "displayName": "Due Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Subtotal",
+              "displayName": "Subtotal",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Tax",
+              "displayName": "Tax",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Total",
+              "displayName": "Total",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "File Name",
+              "displayName": "File Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Notes",
+              "displayName": "Notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Source File ID",
+              "displayName": "Source File ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Model Used",
+              "displayName": "Model Used",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Due Date Note",
+              "displayName": "Due Date Note",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Processed At",
+              "displayName": "Processed At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8894cbae-f92b-56f0-b09c-ca1004e462cb",
       "name": "Log to Invoice Log",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
       "position": [
-        2200,
-        0
+        4180,
+        -100
       ]
     },
     {
@@ -378,35 +958,125 @@
         "fileId": {
           "__rl": true,
           "mode": "id",
-          "value": "={{ $('Validate Invoice').item.json.source_file_id }}"
+          "value": "={{ $('Check Duplicate Invoice').item.json.source_file_id }}"
         },
-        "newUpdatedFileName": "={{ $('Validate Invoice').item.json.new_file_name }}",
+        "newUpdatedFileName": "={{ $('Check Duplicate Invoice').item.json.new_file_name }}",
         "options": {}
       },
+      "id": "bfc87259-e08f-56d6-92ce-ced18a217ef6",
       "name": "Rename PDF",
       "type": "n8n-nodes-base.googleDrive",
       "typeVersion": 3,
       "position": [
-        2420,
-        0
+        4400,
+        -100
       ]
     },
     {
       "parameters": {
-        "sendTo": "you@example.com",
-        "subject": "={{ '[' + $('Validate Invoice').item.json.status + '] Invoice ' + ($('Validate Invoice').item.json.invoice_number || '(no #)') + ' - ' + ($('Validate Invoice').item.json.vendor || 'Unknown vendor') }}",
+        "operation": "move",
+        "fileId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Check Duplicate Invoice').item.json.source_file_id }}"
+        },
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Config').first().json.processedFolderId }}"
+        }
+      },
+      "id": "73b4a613-2153-5170-b9f5-bdf97d5cad95",
+      "name": "Move to Processed",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        4620,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "needsreview",
+              "leftValue": "={{ $('Check Duplicate Invoice').item.json.status === 'Needs Review' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ac5cde6f-61d4-5f1b-a011-91c1eb023c78",
+      "name": "Needs Review?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        4840,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Config').first().json.notifyEmail }}",
+        "subject": "={{ '[Needs Review] Invoice ' + ($('Check Duplicate Invoice').item.json.invoice_number || '(no #)') + ' - ' + ($('Check Duplicate Invoice').item.json.vendor || $('Check Duplicate Invoice').item.json.source_file_name || 'Unknown vendor') }}",
         "emailType": "text",
-        "message": "={{ (() => { const v = $('Validate Invoice').item.json; return [\n'Invoice processed by Roberts & Roberts Automation', '',\n'Status: ' + v.status,\n'Vendor: ' + (v.vendor || '(missing)'),\n'Invoice #: ' + (v.invoice_number || '(missing)'),\n'Invoice date: ' + (v.invoice_date || '(missing)'),\n'Due date: ' + (v.due_date || v.due_date_note || '(missing)'),\n'Total: $' + (v.total != null ? Number(v.total).toFixed(2) : '(missing)'),\n'Notes: ' + (v.notes || 'None'),\n'File saved as: ' + v.new_file_name,\n'Read by: ' + v.model_used ].join('\\n'); })() }}",
+        "message": "={{ (() => { const v = $('Check Duplicate Invoice').item.json; return [\n'An invoice needs your review (Roberts & Roberts Automation)', '',\n'Why: ' + (v.notes || '(no notes)'),\n'Vendor: ' + (v.vendor || '(missing)'),\n'Invoice #: ' + (v.invoice_number || '(missing)'),\n'Invoice date: ' + (v.invoice_date || '(missing)'),\n'Due date: ' + (v.due_date || v.due_date_note || '(missing)'),\n'Total: ' + (v.total != null ? '$' + Number(v.total).toFixed(2) : '(missing)'),\n'File saved as: ' + v.new_file_name + ' (moved to Processed)',\n'Open: ' + v.drive_link,\n'Read by: ' + v.model_used,\n'Processed: ' + v.processed_at ].join('\\n'); })() }}",
         "options": {
           "appendAttribution": false
         }
       },
-      "name": "Email Summary",
+      "id": "e855ac76-3998-530a-90c8-c6fd34998ecf",
+      "name": "Email Needs Review",
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.1,
       "position": [
-        2640,
+        5060,
+        -200
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "03e7e909-9a98-5758-b8b4-a610605e17ab",
+      "name": "OK: Logged Only",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        5060,
         0
+      ],
+      "notes": "OK invoices are logged, renamed and moved, with no immediate email. Future: daily digest."
+    },
+    {
+      "parameters": {
+        "content": "## Setup (v1.3)\n1. Set the Inbox folder ID on **Google Drive Trigger** and **List Inbox PDFs** (`YOUR_INBOX_FOLDER_ID`).\n2. Everything else is in **Config**: Processed folder, Invoice Log sheet ID, notify/alert emails, time zone, the Gemini prompt and response schema (shared by all 3 models).\n3. Sheet header row must include: Source File ID, Model Used, Due Date Note, Processed At.\n\nDuplicates (same Drive file ID, or same vendor + invoice #) are skipped: no log, rename, move or email. Only Needs Review invoices email immediately.",
+        "height": 340,
+        "width": 520
+      },
+      "id": "86bb441f-562f-5ceb-ad99-e5eedaf21f59",
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        400,
+        -420
       ]
     }
   ],
@@ -415,7 +1085,7 @@
       "main": [
         [
           {
-            "node": "Is PDF?",
+            "node": "Config",
             "type": "main",
             "index": 0
           }
@@ -437,6 +1107,17 @@
       "main": [
         [
           {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
             "node": "Is PDF?",
             "type": "main",
             "index": 0
@@ -448,12 +1129,69 @@
       "main": [
         [
           {
+            "node": "Read Invoice Log",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Describe Non-PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Describe Non-PDF": {
+      "main": [
+        [
+          {
+            "node": "Log Non-PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Invoice Log": {
+      "main": [
+        [
+          {
+            "node": "Check File ID Logged",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check File ID Logged": {
+      "main": [
+        [
+          {
+            "node": "New File?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "New File?": {
+      "main": [
+        [
+          {
             "node": "Download Invoice PDF",
             "type": "main",
             "index": 0
           }
         ],
-        []
+        [
+          {
+            "node": "Skip: File Already Logged",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Download Invoice PDF": {
@@ -482,6 +1220,24 @@
       "main": [
         [
           {
+            "node": "Has Content? (3.5 Flash Lite)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fallback: Gemini 3.1 Flash Lite",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Content? (3.5 Flash Lite)": {
+      "main": [
+        [
+          {
             "node": "Parse AI Response",
             "type": "main",
             "index": 0
@@ -497,6 +1253,24 @@
       ]
     },
     "Fallback: Gemini 3.1 Flash Lite": {
+      "main": [
+        [
+          {
+            "node": "Has Content? (3.1 Flash Lite)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fallback: Gemini 3.7 Flash",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Content? (3.1 Flash Lite)": {
       "main": [
         [
           {
@@ -518,7 +1292,43 @@
       "main": [
         [
           {
+            "node": "Has Content? (3.7 Flash)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Failure Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Content? (3.7 Flash)": {
+      "main": [
+        [
+          {
             "node": "Parse AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Failure Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Failure Alert": {
+      "main": [
+        [
+          {
+            "node": "Email Failure Alert",
             "type": "main",
             "index": 0
           }
@@ -538,6 +1348,35 @@
     },
     "Validate Invoice": {
       "main": [
+        [
+          {
+            "node": "Check Duplicate Invoice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Duplicate Invoice": {
+      "main": [
+        [
+          {
+            "node": "Duplicate?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Duplicate?": {
+      "main": [
+        [
+          {
+            "node": "Skip: Duplicate Invoice",
+            "type": "main",
+            "index": 0
+          }
+        ],
         [
           {
             "node": "Log to Invoice Log",
@@ -562,7 +1401,36 @@
       "main": [
         [
           {
-            "node": "Email Summary",
+            "node": "Move to Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Move to Processed": {
+      "main": [
+        [
+          {
+            "node": "Needs Review?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Review?": {
+      "main": [
+        [
+          {
+            "node": "Email Needs Review",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "OK: Logged Only",
             "type": "main",
             "index": 0
           }
@@ -572,5 +1440,7 @@
   },
   "settings": {
     "executionOrder": "v1"
-  }
+  },
+  "pinData": {},
+  "active": false
 }

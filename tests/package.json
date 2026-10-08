@@ -1,0 +1,7 @@
+{
+  "name": "invoice-extraction-n8n-tests",
+  "private": true,
+  "description": "Offline tests: structural checks + Code-node logic run in a small n8n simulator with mocked Google/Gemini nodes",
+  "scripts": { "test": "node run-tests.js" },
+  "dependencies": { "luxon": "^3.5.0" }
+}
